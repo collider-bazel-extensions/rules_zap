@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: bazel test (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+
+      - name: bazel build //...
+        run: bazel build //...
+
+      # .bazelrc sets --sandbox_default_allow_network=false for tests, and
+      # every scan is tagged block-network: ZAP and the fixture servers see
+      # loopback only. //tests:network_blocked_test proves the sandbox is
+      # really offline.
+      - name: bazel test //tests/...
+        run: bazel test //tests/... --test_output=errors
+
+      - name: Build-time failures
+        run: |
+          expect_fail() {  # expect_fail <message> <bazel build args...>
+            local msg="$1"; shift
+            if bazel build "$@" 2> build.log; then echo "FAIL: bazel build $* succeeded" >&2; exit 1; fi
+            grep -qF "$msg" build.log || { cat build.log; echo "FAIL: '$msg' not in the output" >&2; exit 1; }
+            echo "ok: bazel build $* failed with: $msg"
+          }
+          expect_fail "missing_reason.yaml:2: accept[0] (id 40012): missing 'reason'" //tests:malformed_config_scan
+
+      - name: The pins match upstream
+        run: tools/update_versions.sh 2.17.0 --index-commit "$(sed -n 's|.*zap-admin/\([0-9a-f]*\)/.*|\1|p' private/versions.bzl)" --check
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bazel-testlogs
+          path: bazel-testlogs/
+          if-no-files-found: ignore
+
+  consumer:
+    # The release archive (git archive honours .gitattributes export-ignore,
+    # as GitHub's tag tarballs do) must load with //... for a consumer, and
+    # its rules must work from another module.
+    name: consumer (ubuntu-latest, git archive)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+
+      - name: Consumer check
+        run: .github/consumer/check.sh "$RUNNER_TEMP/consumer"

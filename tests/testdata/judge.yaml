@@ -1,0 +1,11 @@
+# For //tests:judge_* against report.xml.
+accept:
+  - id: 40012                       # one of its two instances: /api/search stays open
+    url: ^http://[^/]+/api/greet\?
+    reason: The greet page is a fixture.
+  - id: 10020-1                     # an alert reference: 10020-2 stays open
+    reason: Never framed.
+  - id: 10021                       # a plugin id: every instance
+    reason: 'JSON only: never rendered.'
+  - id: 99999
+    reason: Matches nothing; reported as a stale entry.

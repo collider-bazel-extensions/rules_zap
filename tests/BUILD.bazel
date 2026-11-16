@@ -1,0 +1,295 @@
+"""Tests for rules_zap. The fixture servers (tests/fixtures) run on the pinned
+JDK; every scan runs with the network blocked (block-network, added by the
+zap_api_scan_test macro; the sh_test wrappers carry it too)."""
+
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//:defs.bzl", "zap_api_scan_test", "zap_rules_config_test")
+load(":analysis_tests.bzl", "analysis_test_suite")
+load(":fixtures.bzl", "scan_check_test", "zap_judge")
+
+_OFFLINE = ["block-network"]
+
+_OPENAPI = "//tests/fixtures:openapi.yaml"
+
+# ---- scans ----------------------------------------------------------------------
+
+# A clean server passes even when every Low alert fails the test.
+zap_api_scan_test(
+    name = "clean_scan_test",
+    fail_on = "Low",
+    openapi = _OPENAPI,
+    server = "//tests/fixtures:clean_server",
+)
+
+# The vulnerable server: reflected XSS (40012, High). Run by
+# vulnerable_scan_fails_test, which expects it to fail. The OpenAPI document
+# is fetched from the server (openapi_path).
+zap_api_scan_test(
+    name = "vulnerable_scan",
+    fail_on = "High",
+    openapi_path = "/openapi.yaml",
+    server = "//tests/fixtures:vulnerable_server",
+    tags = ["manual"],
+)
+
+scan_check_test(
+    name = "vulnerable_scan_fails_test",
+    size = "medium",
+    scan = ":vulnerable_scan",
+    status = 1,
+    checks = [
+        "+FAIL: 1 alert(s) at or above High not accepted by rules_config:",
+        "+[High] 40012 Cross Site Scripting (Reflected)",
+        "+GET /api/greet?name=",
+        "+param: name",
+        # The fixture's missing-header alerts (Medium/Low) are found too,
+        # and listed below fail_on, not failing. Which passive alerts appear
+        # isn't asserted one by one: 10020-1 was missing in 1 of 15 runs
+        # (see DESIGN.md); //tests:judge_* covers the verdict logic exactly.
+        "+Below High (reported, not failing):",
+        # The plan turns off HTTP Only Site (plain HTTP on loopback by design).
+        "-HTTP Only Site",
+        "+Job activeScan set rule 10106 threshold to OFF",
+        "+    - id: 40012",
+        "@zap-report.html",
+        "@zap-report.json",
+        "@zap.log",
+        "@server.log",
+        "@zap-plan.yaml",
+        "=zap-report.xml:version=\"2.17.0\"",
+        "=zap-report.xml:<pluginid>40012</pluginid>",
+        "=zap-plan.yaml:apiUrl:",
+        "=junit.xml:failures=\"1\"",
+    ],
+)
+
+# The same server and XSS, accepted by rules_config (by plugin id and URL):
+# the scan passes. (accept_xss.yaml's second entry, by alert reference, is
+# exercised exactly by //tests:judge_*.)
+zap_api_scan_test(
+    name = "accepted_alert_scan",
+    fail_on = "High",
+    openapi = _OPENAPI,
+    rules_config = "//tests/testdata:accept_xss.yaml",
+    server = "//tests/fixtures:vulnerable_server",
+    tags = ["manual"],
+)
+
+scan_check_test(
+    name = "accepted_alert_scan_test",
+    size = "medium",
+    scan = ":accepted_alert_scan",
+    status = 0,
+    checks = [
+        "+Accepted by tests/testdata/accept_xss.yaml:",
+        "+[High] 40012 Cross Site Scripting (Reflected), 1 instance(s): accept[0]: Fixture:",
+        "-FAIL",
+        "+PASS",
+        "=junit.xml:failures=\"0\"",
+    ],
+)
+
+# An accepted alert past its expiry date fails the test before ZAP starts.
+zap_api_scan_test(
+    name = "expired_scan",
+    fail_on = "High",
+    openapi = _OPENAPI,
+    rules_config = "//tests/testdata:expired.yaml",
+    server = "//tests/fixtures:vulnerable_server",
+    tags = ["manual"],
+)
+
+scan_check_test(
+    name = "expired_scan_test",
+    scan = ":expired_scan",
+    status = 1,
+    checks = [
+        "+1 accepted alert(s) in rules_config have expired:",
+        "+tests/testdata/expired.yaml:2: accept[0] (id 40012, url /api/greet) expired on 2000-01-01",
+        "-starting ZAP",
+    ],
+)
+
+# A server that exits at once: an error naming its status and log, no hang.
+zap_api_scan_test(
+    name = "dead_server_scan",
+    openapi = _OPENAPI,
+    server = "//tests/fixtures:dies",
+    tags = ["manual"],
+)
+
+scan_check_test(
+    name = "dead_server_scan_test",
+    scan = ":dead_server_scan",
+    status = 2,
+    checks = [
+        "+the server exited (status 3) before it was ready",
+        "+dies.sh: exiting with status 3 (PORT=",
+        "-starting ZAP",
+    ],
+)
+
+# CI: `bazel build //tests:malformed_config_scan` must fail (the rules_config
+# check is a validation action) with "missing 'reason'".
+zap_api_scan_test(
+    name = "malformed_config_scan",
+    openapi = _OPENAPI,
+    rules_config = "//tests/testdata:missing_reason.yaml",
+    server = "//tests/fixtures:clean_server",
+    tags = ["manual"],
+)
+
+# ---- the verdict, on a checked-in report (no ZAP run) ---------------------------
+
+zap_judge(
+    name = "judge_medium",
+    fail_on = "Medium",
+    report = "//tests/testdata:report.xml",
+    rules_config = "//tests/testdata:judge.yaml",
+    tags = ["manual"],
+)
+
+scan_check_test(
+    name = "judge_medium_test",
+    scan = ":judge_medium",
+    status = 1,
+    checks = [
+        "+7 alert type(s) raised; failing at Medium and above.",
+        "+FAIL: 3 alert(s) at or above Medium not accepted by rules_config:",
+        # 40012: the url entry accepts /api/greet only; /api/search stays open.
+        "+[High] 40012 Cross Site Scripting (Reflected) (confidence Medium)\n      GET /api/search?q=",
+        "-GET /api/greet?name=%3CscrIpt",
+        "+(1 other instance(s) accepted by accept[0])",
+        "-Reports:",
+        # 10020-1 accepted by alert reference; 10020-2 (same plugin) isn't.
+        "+[Medium] 10020-2 Multiple X-Frame-Options Header Entries",
+        "+[Medium] 10038-1 Content Security Policy (CSP) Header Not Set",
+        "+Accepted by tests/testdata/judge.yaml:",
+        "+[Medium] 10020-1 Missing Anti-clickjacking Header, 1 instance(s): accept[1]: Never framed.",
+        # A plugin id accepts every instance, and Low alerts are listed as accepted too.
+        "+[Low] 10021 X-Content-Type-Options Header Missing, 2 instance(s): accept[2]: JSON only: never rendered.",
+        "+Below Medium (reported, not failing):\n  [Informational] 10104 User Agent Fuzzer",
+        # ZAP's own False Positive confidence never counts.
+        "-90022",
+        "+Note: tests/testdata/judge.yaml:10: accept[3] (id 99999) matched no alert",
+        "+    - id: 40012\n      url: '/api/search'",
+        "=junit.xml:failures=\"3\"",
+        "=junit.xml:tests=\"7\"",
+    ],
+)
+
+zap_judge(
+    name = "judge_high",
+    fail_on = "High",
+    report = "//tests/testdata:report.xml",
+    rules_config = "//tests/testdata:judge.yaml",
+    tags = ["manual"],
+)
+
+scan_check_test(
+    name = "judge_high_test",
+    scan = ":judge_high",
+    status = 1,
+    checks = [
+        "+FAIL: 1 alert(s) at or above High not accepted by rules_config:",
+        "+Below High (reported, not failing):\n  [Medium] 10020-2 Multiple X-Frame-Options Header Entries (1 instance(s))\n  [Medium] 10038-1",
+    ],
+)
+
+zap_judge(
+    name = "judge_all_accepted",
+    fail_on = "Low",
+    report = "//tests/testdata:report.xml",
+    rules_config = "//tests/testdata:judge_all.yaml",
+    tags = ["manual"],
+)
+
+scan_check_test(
+    name = "judge_all_accepted_test",
+    scan = ":judge_all_accepted",
+    status = 0,
+    checks = [
+        "-FAIL",
+        "+PASS",
+        "=junit.xml:failures=\"0\"",
+    ],
+)
+
+zap_judge(
+    name = "judge_no_config",
+    fail_on = "Informational",
+    report = "//tests/testdata:report.xml",
+    tags = ["manual"],
+)
+
+scan_check_test(
+    name = "judge_no_config_test",
+    scan = ":judge_no_config",
+    status = 1,
+    checks = [
+        "+FAIL: 6 alert(s) at or above Informational not accepted by rules_config:",
+        "-Accepted by",
+    ],
+)
+
+# ---- rules_config checks ----------------------------------------------------------
+
+zap_rules_config_test(
+    name = "config_ok_test",
+    src = "//tests/testdata:accept_xss.yaml",
+)
+
+zap_rules_config_test(
+    name = "config_empty_list_test",
+    src = "//tests/testdata:empty_list.yaml",
+)
+
+[zap_rules_config_test(
+    name = "config_" + name + "_test",
+    src = "//tests/testdata:" + name + ".yaml",
+    expect_error = err,
+) for name, err in [
+    ("missing_reason", r"missing_reason\.yaml:2: accept\[0\] \(id 40012\): missing 'reason': every accepted alert needs one"),
+    ("blank_reason", r"accept\[0\] \(id 40012\): missing 'reason'"),
+    ("unknown_key", r"unknown_key\.yaml:3: accept\[0\]: unknown key 'reasn' \(known: expires, id, reason, url\)"),
+    ("bad_id", r"id must be a ZAP plugin id \(40012\) or alert reference \(10020-1\), got 'xss'"),
+    ("bad_regex", r"url is not a valid regular expression: Unclosed group"),
+    ("bad_date", r"expires must be a date, YYYY-MM-DD, got '31/12/2027'"),
+    ("wrong_top_level", r"expected `accept:` \(the list of accepted alerts\) first, got `accepted:`"),
+    ("duplicate", r"duplicate\.yaml:4: accept\[1\]: duplicate of accept\[0\] \(line 2\)"),
+    ("unsupported_yaml", r"flow-style YAML .* isn't supported"),
+]]
+
+# ---- the pinned ZAP ---------------------------------------------------------------
+
+sh_test(
+    name = "zap_cli_test",
+    srcs = ["zap_cli_test.sh"],
+    args = ["$(rootpath //:zap)"],
+    data = ["//:zap"],
+    tags = _OFFLINE,
+)
+
+sh_test(
+    name = "version_test",
+    srcs = ["version_test.sh"],
+    data = [
+        "//:MODULE.bazel",
+        "//private:versions.bzl",
+    ],
+)
+
+sh_test(
+    name = "checksums_test",
+    srcs = ["checksums_test.sh"],
+    data = ["//private:versions.bzl"],
+)
+
+# The sandbox these scans run in really has no network (loopback only).
+sh_test(
+    name = "network_blocked_test",
+    srcs = ["network_blocked_test.sh"],
+    tags = _OFFLINE,
+)
+
+analysis_test_suite(name = "analysis_tests")

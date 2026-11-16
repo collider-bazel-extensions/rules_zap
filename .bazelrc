@@ -1,0 +1,7 @@
+# rules_zap names its JDK directly, so it needs no Java flags. These are
+# for this repository's own builds only (a consumer doesn't read them).
+common --incompatible_strict_action_env
+# Scans run with the network blocked (zap_api_scan_test tags itself
+# block-network); this makes every sandboxed action and test offline too.
+test --sandbox_default_allow_network=false
+test --test_output=errors

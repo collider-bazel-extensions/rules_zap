@@ -1,0 +1,5 @@
+accept:
+  - id: 40012
+    url: /api/greet
+    reason: Accepted until a fix shipped; the fix date has passed.
+    expires: 2000-01-01

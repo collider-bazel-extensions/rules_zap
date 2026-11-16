@@ -1,0 +1,28 @@
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("//tests:fixtures.bzl", "java_source_server")
+
+package(default_visibility = ["//tests:__subpackages__"])
+
+exports_files(["openapi.yaml"])
+
+# The same API twice: `vulnerable` reflects a query parameter unescaped into
+# HTML (reflected XSS, ZAP rule 40012, High); `clean` answers escaped JSON
+# with the usual security headers. Both serve openapi.yaml at /openapi.yaml.
+[java_source_server(
+    name = mode + "_server",
+    src = "FixtureServer.java",
+    args_ = [
+        mode,
+        "$(rootpath openapi.yaml)",
+    ],
+    data = ["openapi.yaml"],
+) for mode in [
+    "vulnerable",
+    "clean",
+]]
+
+# Exits at once with status 3: zap_api_scan_test must say so, not hang.
+sh_binary(
+    name = "dies",
+    srcs = ["dies.sh"],
+)

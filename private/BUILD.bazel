@@ -1,0 +1,43 @@
+load(":driver.bzl", "zap_driver")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["ZapScan.java"])
+
+# The JDK ZAP and the driver run on: rules_java's remote JDK 21 for the
+# platform, named directly rather than resolved as a Java toolchain.
+[config_setting(
+    name = name,
+    constraint_values = [
+        "@platforms//os:" + os,
+        "@platforms//cpu:" + cpu,
+    ],
+) for name, os, cpu in [
+    ("linux_x86_64", "linux", "x86_64"),
+    ("linux_aarch64", "linux", "aarch64"),
+    ("macos_x86_64", "macos", "x86_64"),
+    ("macos_aarch64", "macos", "aarch64"),
+]]
+
+alias(
+    name = "jdk",
+    actual = select(
+        {
+            ":linux_x86_64": "@remotejdk21_linux//:jdk",
+            ":linux_aarch64": "@remotejdk21_linux_aarch64//:jdk",
+            ":macos_x86_64": "@remotejdk21_macos//:jdk",
+            ":macos_aarch64": "@remotejdk21_macos_aarch64//:jdk",
+        },
+        no_match_error = "rules_zap: no remote JDK for this platform; supported: linux and macos on x86_64 and aarch64",
+    ),
+)
+
+zap_driver(
+    name = "driver",
+    srcs = ["ZapScan.java"],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["*"]),
+)

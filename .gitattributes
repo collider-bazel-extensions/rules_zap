@@ -1,0 +1,6 @@
+# Keep the release archive loadable for consumers: tests/ loads the dev-only
+# rules_shell, which a consumer can't see, so `bazel query @rules_zap//...`
+# would fail on it. tools/ is maintainer-only. GitHub's tag tarballs honour
+# export-ignore. (A git_override clone still has both.)
+tests/ export-ignore
+tools/ export-ignore

@@ -1,0 +1,3 @@
+accept:
+  - id: xss
+    reason: Typo for 40012.

@@ -1,0 +1,11 @@
+# For //tests:judge_all_accepted: everything in report.xml at Low and above.
+accept:
+  - id: 40012
+    reason: Fixture.
+  - id: "10020"
+    reason: Fixture (plugin id, quoted).
+  - id: 10038-1
+    reason: Fixture.
+  - id: 10021
+    url: '/api/(greet|items)'
+    reason: Fixture.

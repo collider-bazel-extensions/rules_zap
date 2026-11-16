@@ -1,0 +1,43 @@
+"""rules_zap — OWASP ZAP API scans as Bazel tests.
+
+  zap_api_scan_test     — test: start a server, scan its OpenAPI API with
+                          ZAP's Automation Framework, fail on alerts at or
+                          above `fail_on` that rules_config doesn't accept
+  zap_rules_config_test — test: a rules_config passes the check, or fails
+                          it with an expected message
+  //:zap                — `bazel run` the pinned ZAP (-cmd, fresh home)
+
+Pinned: ZAP 2.17.0 (upstream Core cross-platform zip) and its scan add-ons
+from ZAP's marketplace index, on rules_java's remote JDK 21.
+"""
+
+module(
+    name = "rules_zap",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
+bazel_dep(name = "platforms", version = "1.0.0")
+
+# ZAP runs on rules_java's remote JDK 21, named directly (not through Java
+# toolchain resolution), so no host Java and no --java_runtime_version flag
+# is needed. Only the platform a build needs is downloaded.
+bazel_dep(name = "rules_java", version = "9.6.1")
+
+java_toolchains = use_extension("@rules_java//java:extensions.bzl", "toolchains")
+use_repo(
+    java_toolchains,
+    "remotejdk21_linux",
+    "remotejdk21_linux_aarch64",
+    "remotejdk21_macos",
+    "remotejdk21_macos_aarch64",
+)
+
+# The pinned ZAP install and add-ons, as @zap. The root module's
+# zap.version() wins; without one, rules_zap's own applies.
+zap = use_extension("//:extensions.bzl", "zap")
+zap.version(version = "2.17.0")
+use_repo(zap, "zap")
+
+# ---- dev-only ---------------------------------------------------------------
+bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)

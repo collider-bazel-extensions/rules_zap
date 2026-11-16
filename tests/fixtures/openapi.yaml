@@ -1,0 +1,35 @@
+openapi: 3.0.3
+info:
+  title: rules_zap fixture API
+  version: "1.0"
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/greet:
+    get:
+      operationId: greet
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+            example: world
+      responses:
+        "200":
+          description: A greeting.
+  /api/items/{id}:
+    get:
+      operationId: getItem
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            example: 42
+      responses:
+        "200":
+          description: The item.
+        "404":
+          description: No such item.

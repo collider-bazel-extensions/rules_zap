@@ -1,0 +1,9 @@
+# Accepted alerts for //tests:accepted_alert_scan. Fixture only: the
+# vulnerable server reflects `name` on purpose.
+accept:
+  - id: 40012                       # Cross Site Scripting (Reflected)
+    url: /api/greet
+    reason: "Fixture: the vulnerable server reflects `name` on purpose; this checks that an accepted alert passes."
+    expires: 2999-12-31
+  - id: 10020-1                     # Missing Anti-clickjacking Header (an alert reference)
+    reason: The fixture API is never framed.

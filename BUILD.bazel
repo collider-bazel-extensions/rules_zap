@@ -1,0 +1,10 @@
+load("//:defs.bzl", "zap_cli")
+
+exports_files(["MODULE.bazel"])
+
+# `bazel run @rules_zap//:zap -- -version`: the pinned ZAP with a fresh,
+# throw-away home and the pinned add-ons (-silent; -cmd unless -daemon).
+zap_cli(
+    name = "zap",
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,5 @@
+accept:
+  - id: 40012
+    url: /api/greet
+  - id: 10021
+    reason: JSON only; never rendered.
