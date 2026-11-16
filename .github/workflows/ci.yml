@@ -20,6 +20,12 @@ jobs:
           disk-cache: ${{ github.workflow }}
           repository-cache: true
 
+      # The network-blocking linux-sandbox (the scans' block-network tag)
+      # needs unprivileged user namespaces; Ubuntu 24.04's AppArmor restricts
+      # them by default, and Bazel then falls back to a sandbox with network.
+      - name: Allow the linux-sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
       - name: bazel build //...
         run: bazel build //...
 
@@ -65,6 +71,12 @@ jobs:
         with:
           bazelisk-cache: true
           repository-cache: true
+
+      # The network-blocking linux-sandbox (the scans' block-network tag)
+      # needs unprivileged user namespaces; Ubuntu 24.04's AppArmor restricts
+      # them by default, and Bazel then falls back to a sandbox with network.
+      - name: Allow the linux-sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 
       - name: Consumer check
         run: .github/consumer/check.sh "$RUNNER_TEMP/consumer"
