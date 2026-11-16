@@ -20,7 +20,7 @@ archive_override(
     module_name = "rules_zap",
     urls = ["https://github.com/collider-bazel-extensions/rules_zap/archive/refs/tags/v0.1.0.tar.gz"],
     strip_prefix = "rules_zap-0.1.0",
-    integrity = "INTEGRITY_AFTER_TAG",
+    integrity = "sha256-/fS7Oetee9FzM5h2bdz96p1d5JMBhr1ZrdDV2OcF63A=",
 )
 ```
 
