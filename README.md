@@ -15,12 +15,12 @@ No host Java, no container. ZAP is the upstream release archive (ZAP 2.17.0, its
 ## Installation
 
 ```python
-bazel_dep(name = "rules_zap", version = "0.1.0")
+bazel_dep(name = "rules_zap", version = "0.1.1")
 archive_override(
     module_name = "rules_zap",
-    urls = ["https://github.com/collider-bazel-extensions/rules_zap/archive/refs/tags/v0.1.0.tar.gz"],
-    strip_prefix = "rules_zap-0.1.0",
-    integrity = "sha256-/fS7Oetee9FzM5h2bdz96p1d5JMBhr1ZrdDV2OcF63A=",
+    urls = ["https://github.com/collider-bazel-extensions/rules_zap/archive/refs/tags/v0.1.1.tar.gz"],
+    strip_prefix = "rules_zap-0.1.1",
+    integrity = "sha256-xRPTXTFA7/klLY1CsA44t6sv884wP7OOg3mxZcRQ7Mo=",
 )
 ```
 
