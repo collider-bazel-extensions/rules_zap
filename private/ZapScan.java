@@ -498,6 +498,33 @@ public final class ZapScan {
 
     // ---- ZAP home and processes -------------------------------------------
 
+    /**
+     * The pinned ZAP files, each checked present before ZAP starts. ZAP skips
+     * an add-on it can't read with only a log warning ("Invalid add-on ...
+     * FILE_NOT_READABLE"), so a missing ascanrules.zap gave an active scan
+     * with no rules that still passed.
+     */
+    static List<Path> pinnedInputs(Args args, String prefix) throws Failure {
+        String runfiles = args.need("runfiles");
+        String[][] files = {{"jar", "the ZAP jar"}, {"install", "the ZAP install directory"}};
+        for (String[] f : files) {
+            if (!Files.exists(args.runfile(f[0]))) {
+                throw new Failure(EXIT_ERROR, prefix + f[1] + " is missing: " + args.need(f[0]) + " (not in the runfiles)");
+            }
+        }
+        List<Path> addons = new ArrayList<>();
+        for (String a : args.all("addon")) {
+            Path p = Path.of(runfiles, a);
+            if (!Files.isReadable(p)) {
+                String id = p.getFileName().toString().replaceFirst("\\.zap$", "");
+                throw new Failure(EXIT_ERROR, prefix + "the pinned ZAP add-on " + id + " is missing: " + a
+                        + " (not in the runfiles)");
+            }
+            addons.add(p);
+        }
+        return addons;
+    }
+
     /** A fresh ZAP home: `plugin/` holds exactly the pinned add-ons. */
     static Path freshHome(Path home, List<Path> addons) throws IOException {
         deleteTree(home);
@@ -612,12 +639,9 @@ public final class ZapScan {
     // ---- bazel run //:zap -----------------------------------------------------
 
     static int cli(Args args) throws Failure, IOException {
+        List<Path> addons = pinnedInputs(args, "rules_zap: ");
         Path jar = args.runfile("jar");
         Path install = args.runfile("install");
-        List<Path> addons = new ArrayList<>();
-        for (String a : args.all("addon")) {
-            addons.add(Path.of(args.need("runfiles"), a));
-        }
         Path tmp = Files.createTempDirectory("rules_zap-");
         try {
             Path home = freshHome(tmp.resolve("home"), addons);
@@ -721,10 +745,7 @@ public final class ZapScan {
             String undeclared = System.getenv("TEST_UNDECLARED_OUTPUTS_DIR");
             Path out = undeclared != null ? Path.of(undeclared) : tmp.resolve("outputs");
             Files.createDirectories(out);
-            List<Path> addons = new ArrayList<>();
-            for (String a : args.all("addon")) {
-                addons.add(Path.of(args.need("runfiles"), a));
-            }
+            List<Path> addons = pinnedInputs(args, prefix);
             Path home = freshHome(tmp.resolve("zap-home"), addons);
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -744,6 +765,10 @@ public final class ZapScan {
             Path plan = tmp.resolve("zap-plan.yaml");
             Files.writeString(plan, plan(origin, out));
             List<String> cmd = zapCommand(args.runfile("jar"), args.runfile("install"), home, args.all("jvm-flag"));
+            // ZAP's own proxy on a free port too: the default 8080 collides
+            // when scans run side by side without a network sandbox.
+            cmd.add("-port");
+            cmd.add(String.valueOf(freePort()));
             cmd.add("-cmd");
             cmd.add("-autorun");
             cmd.add(plan.toString());
@@ -799,6 +824,7 @@ public final class ZapScan {
                         + describeOpenapi(origin) + "), so nothing was scanned. Its output:\n    "
                         + String.join("\n    ", zapOut.subList(Math.max(0, zapOut.size() - 40), zapOut.size())));
             }
+            checkActiveScan(prefix, zapOut, out.resolve("zap.log"));
             Path xml = out.resolve("zap-report.xml");
             if (!Files.exists(xml)) {
                 throw new Failure(EXIT_ERROR, prefix + "ZAP wrote no report (" + xml + ")");
@@ -809,6 +835,60 @@ public final class ZapScan {
             String header = prefix + "ZAP scanned " + urls + " URL(s) from the OpenAPI document in " + secs(zapNanos)
                     + " (" + secs(System.nanoTime() - t0) + " in all); ";
             return judge(header, origin, alerts, accepted, configName, out);
+        }
+
+        static final Pattern INVALID_ADDON = Pattern.compile("Invalid add-on: (\\S+?\\.zap)\\.? (.+)$");
+        static final Pattern SENT = Pattern.compile("completed host/plugin .* with (\\d+) message\\(s\\) sent");
+
+        /**
+         * The active scan really ran. ZAP reports an unloadable add-on, an
+         * active scan whose rules are unknown, or one that sent nothing as
+         * plan warnings at most, and the scan would otherwise pass as if the
+         * API were clean.
+         */
+        static void checkActiveScan(String prefix, List<String> zapOut, Path zapLog) throws Failure, IOException {
+            List<String> log = Files.exists(zapLog) ? Files.readAllLines(zapLog, StandardCharsets.UTF_8) : List.of();
+            List<String> invalid = new ArrayList<>();
+            for (String l : log) {
+                Matcher m = INVALID_ADDON.matcher(l);
+                if (m.find()) {
+                    invalid.add(Path.of(m.group(1)).getFileName() + " (" + m.group(2) + ")");
+                }
+            }
+            if (!invalid.isEmpty()) {
+                throw new Failure(EXIT_ERROR, prefix + "ZAP could not load the pinned add-on(s) "
+                        + String.join(", ", invalid) + ", so the scan is incomplete. See zap.log in the test outputs.");
+            }
+            List<String> warnings = new ArrayList<>();
+            boolean inWarnings = false;
+            for (String l : zapOut) {
+                if (l.startsWith("Automation plan warnings")) {
+                    inWarnings = true;
+                } else if (inWarnings && l.startsWith("\t")) {
+                    if (l.contains("activeScan")) {
+                        warnings.add(l.trim());
+                    }
+                } else {
+                    inWarnings = false;
+                }
+            }
+            if (!warnings.isEmpty()) {
+                throw new Failure(EXIT_ERROR, prefix + "ZAP's active scan reported problems, so its result can't be "
+                        + "trusted:\n  " + String.join("\n  ", warnings));
+            }
+            long sent = 0;
+            int rules = 0;
+            for (String l : log) {
+                Matcher m = SENT.matcher(l);
+                if (m.find()) {
+                    rules++;
+                    sent += Long.parseLong(m.group(1));
+                }
+            }
+            if (sent == 0) {
+                throw new Failure(EXIT_ERROR, prefix + "ZAP's active scan sent no requests (" + rules
+                        + " scan rule(s) completed), so nothing was actively tested. See zap.log in the test outputs.");
+            }
         }
 
         /** `judge`: the verdict on an existing report (traditional-xml), as `scan` would give it. */

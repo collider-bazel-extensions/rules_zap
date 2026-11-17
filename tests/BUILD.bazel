@@ -5,7 +5,7 @@ zap_api_scan_test macro; the sh_test wrappers carry it too)."""
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//:defs.bzl", "zap_api_scan_test", "zap_rules_config_test")
 load(":analysis_tests.bzl", "analysis_test_suite")
-load(":fixtures.bzl", "scan_check_test", "zap_judge")
+load(":fixtures.bzl", "scan_check_test", "tampered_scan_test", "zap_judge")
 
 _OFFLINE = ["block-network"]
 
@@ -19,6 +19,36 @@ zap_api_scan_test(
     fail_on = "Low",
     openapi = _OPENAPI,
     server = "//tests/fixtures:clean_server",
+)
+
+# A missing or unloadable pinned add-on fails the scan instead of passing
+# with an active scan that ran no rules (#1). The clean scan passes when
+# intact, so a pass here would be the silent failure the checks prevent.
+tampered_scan_test(
+    name = "missing_addon_test",
+    size = "medium",
+    addon = "ascanrules",
+    checks = [
+        "+the pinned ZAP add-on ascanrules is missing: ",
+        "-starting ZAP",
+        "-PASS",
+    ],
+    mode = "missing",
+    scan = ":clean_scan_test",
+    status = 2,
+)
+
+tampered_scan_test(
+    name = "corrupt_addon_test",
+    size = "medium",
+    addon = "ascanrules",
+    checks = [
+        "+ZAP could not load the pinned add-on(s) ascanrules.zap (",
+        "-PASS",
+    ],
+    mode = "corrupt",
+    scan = ":clean_scan_test",
+    status = 2,
 )
 
 # The vulnerable server: reflected XSS (40012, High). Run by

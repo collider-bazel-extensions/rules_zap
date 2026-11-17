@@ -71,6 +71,7 @@ The test does the following:
    - writes the reports.
 
    If the import adds no URLs, the test fails rather than passing on an empty scan. A failed plan also fails the test, and so does a server that dies during the scan.
+   The active scan must really run: a pinned add-on missing from the runfiles or unloadable by ZAP, an activeScan warning in the plan's output, or an active scan that sent no requests fails the test (exit 2), naming the cause, instead of reading like a clean result.
 4. **Judges the alerts.** An alert fails the test when its risk is at or above `fail_on` and at least one of its instances isn't accepted by `rules_config`. Alerts that ZAP itself rates "False Positive" never count.
 
 On failure the log shows the failing alerts, their URLs (without the random port), parameters and evidence, followed by a `rules_config` entry to copy:

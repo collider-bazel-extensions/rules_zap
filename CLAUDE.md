@@ -37,7 +37,8 @@ rules_zap/
 ├── tools/update_versions.sh  # re-pin ZAP + add-ons (dependency closure) from upstream; --check
 └── tests/
     ├── BUILD.bazel, analysis_tests.bzl, run_scan.sh
-    ├── fixtures.bzl          # java_source_server (fixtures on the pinned JDK), scan_check_test, zap_judge
+    ├── tampered_scan.sh      # run_scan.sh on a runfiles copy with one add-on removed or corrupted
+    ├── fixtures.bzl          # java_source_server (fixtures on the pinned JDK), scan_check_test, tampered_scan_test, zap_judge
     ├── fixtures/             # FixtureServer.java (vulnerable | clean), openapi.yaml, dies.sh
     ├── testdata/             # rules_config files (good, bad, expired), report.xml + judge*.yaml
     └── zap_cli_test.sh, version_test.sh, checksums_test.sh, network_blocked_test.sh
@@ -77,7 +78,7 @@ tools/update_versions.sh                          # re-pin to the latest release
 
 ### Test results (last full run: 2026-11-16)
 
-All 34 test targets pass on Linux x86_64 (16 cores; ZAP 2.17.0, JDK 21.0.9) in 61 s wall time (`bazel test //tests/... --nocache_test_results`).
+All 36 test targets pass on Linux x86_64 (16 cores; ZAP 2.17.0, JDK 21.0.9) in 61 s wall time (`bazel test //tests/... --nocache_test_results`).
 - **Scan durations.**
   - Alone, a scan test takes about 32–37 s: ZAP start-up about 10 s, the active scan 17–19 s, shutdown about 5 s.
   - With the whole suite in parallel, it takes 53–56 s (active scan 20–23 s).

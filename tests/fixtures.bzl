@@ -58,6 +58,18 @@ def scan_check_test(name, scan, status, checks, **kwargs):
         **kwargs
     )
 
+def tampered_scan_test(name, scan, mode, addon, status, checks, **kwargs):
+    """scan_check_test, with the pinned add-on `addon` removed (mode
+    "missing") or corrupted ("corrupt") in a copy of the runfiles."""
+    sh_test(
+        name = name,
+        srcs = ["tampered_scan.sh"],
+        args = [mode, addon, "$(rootpath {})".format(scan), str(status)] + [shell_quote(c) for c in checks],
+        data = [scan, "run_scan.sh"],
+        tags = kwargs.pop("tags", []) + ["block-network"],
+        **kwargs
+    )
+
 def _zap_judge_impl(ctx):
     jdk = ctx.attr._jdk[JavaRuntimeInfo]
     args = [
